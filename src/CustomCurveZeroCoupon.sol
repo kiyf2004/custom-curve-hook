@@ -8,10 +8,12 @@ import {CurrencySettler} from "@uniswap/v4-core/test/utils/CurrencySettler.sol";
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
 import {BaseHook} from "v4-periphery/src/base/hooks/BaseHook.sol";
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-contract CustomCurveZeroCoupon is BaseHook, ERC1155 {
+contract CustomCurveZeroCoupon is BaseHook, ERC1155Supply {
     using CurrencySettler for Currency;
+    using SafeCast for int256;
 
     error AddLiquidityThroughHook();
 
@@ -155,28 +157,28 @@ contract CustomCurveZeroCoupon is BaseHook, ERC1155 {
     ) external override returns (bytes4, BeforeSwapDelta, uint24) {
         uint256 price = getExchangeRate();
 
-        int128 specifiedAmount = params.amountSpecified;
-        int128 unspecifiedAmount;
+        int256 specifiedAmount = params.amountSpecified;
+        int256 unspecifiedAmount;
 
         if (params.zeroForOne) {
             if (params.amountSpecified < 0) {
                 uint256 amountIn = uint256(-params.amountSpecified);
                 uint256 amountOut = (amountIn * 1e18) / price;
-                unspecifiedAmount = int128(int256(amountOut));
+                unspecifiedAmount = int256(amountOut);
             } else {
                 uint256 amountOut = uint256(params.amountSpecified);
                 uint256 amountIn = (amountOut * price) / 1e18;
-                unspecifiedAmount = -int128(int256(amountIn));
+                unspecifiedAmount = -int256(amountIn);
             }
         } else {
             if (params.amountSpecified < 0) {
                 uint256 amountIn = uint256(-params.amountSpecified);
                 uint256 amountOut = (amountIn * price) / 1e18;
-                unspecifiedAmount = int128(int256(amountOut));
+                unspecifiedAmount = int256(amountOut);
             } else {
                 uint256 amountOut = uint256(params.amountSpecified);
                 uint256 amountIn = (amountOut * 1e18) / price;
-                unspecifiedAmount = -int128(int256(amountIn));
+                unspecifiedAmount = -int256(amountIn);
             }
         }
 
@@ -196,7 +198,7 @@ contract CustomCurveZeroCoupon is BaseHook, ERC1155 {
                 key.currency1.settle(
                     poolManager,
                     address(this),
-                    uint256(unspecifiedAmount),
+                    unspecifiedAmount.toUint256(),
                     true
                 );
             } else {
@@ -224,7 +226,7 @@ contract CustomCurveZeroCoupon is BaseHook, ERC1155 {
                 key.currency0.settle(
                     poolManager,
                     address(this),
-                    uint256(unspecifiedAmount),
+                    unspecifiedAmount.toUint256(),
                     true
                 );
             } else {
@@ -248,14 +250,14 @@ contract CustomCurveZeroCoupon is BaseHook, ERC1155 {
 
     // Remove Liquidity Function
     function removeLiquidity(PoolKey calldata key, uint256 lpTokenAmount) external {
-        uint256 totalSupply = totalSupply(LP_TOKEN_ID);
-        require(totalSupply > 0, "No liquidity");
+        uint256 currentTotalSupply = totalSupply(LP_TOKEN_ID);
+        require(currentTotalSupply > 0, "No liquidity");
 
         uint256 userBalance = balanceOf(msg.sender, LP_TOKEN_ID);
         require(userBalance >= lpTokenAmount, "Insufficient balance");
 
         // Calculate user's share in 1e18 precision
-        uint256 share = (lpTokenAmount * 1e18) / totalSupply;
+        uint256 share = (lpTokenAmount * 1e18) / currentTotalSupply;
 
         // Calculate amounts to withdraw
         uint256 currency0Amount = (totalLiquidity0 * share) / 1e18;
@@ -297,6 +299,3 @@ contract CustomCurveZeroCoupon is BaseHook, ERC1155 {
         );
     }
 }
-
-
-//  D:\Downloads\Foundry\forge.exe script V4Deployer  --rpc-url $env:DEPLOY_URL --private-key $env:FOUNDRY_PRIVATE_KEY --broadcast --gas-price 10000000000000000000 -vvvvvvv
